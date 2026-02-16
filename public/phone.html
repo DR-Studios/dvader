@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dvader - Phone</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .mic-button {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            font-size: 50px;
+            cursor: pointer;
+            margin: 30px auto;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .mic-button:active {
+            transform: scale(0.95);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.6);
+        }
+        .mic-button.recording {
+            background: #ff4757;
+            box-shadow: 0 10px 30px rgba(255, 71, 87, 0.4);
+            animation: pulse 0.5s infinite alternate;
+        }
+        @keyframes pulse {
+            from {
+                transform: scale(1);
+            }
+            to {
+                transform: scale(1.05);
+            }
+        }
+        .text-display {
+            background: #f5f5f5;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            min-height: 80px;
+            color: #333;
+            font-size: 16px;
+            line-height: 1.5;
+            word-wrap: break-word;
+            border: 2px solid #e0e0e0;
+        }
+        .text-display.empty {
+            color: #999;
+            font-style: italic;
+        }
+        .instructions {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: left;
+            margin-top: 20px;
+            font-size: 13px;
+            color: #1565c0;
+        }
+        .instructions p {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Dvader</h1>
+        <p class="subtitle">Dave Voice App</p>
+        
+        <div class="status disconnected" id="status">🔴 Disconnected</div>
+        
+        <button class="mic-button" id="micButton" title="Tap and hold to talk">🎤</button>
+        
+        <div class="text-display empty" id="textDisplay">Tap the mic to talk...</div>
+        
+        <div class="instructions">
+            <p><strong>How to use:</strong></p>
+            <p>1. Tap and hold the 🎤 button</p>
+            <p>2. Speak clearly into your phone</p>
+            <p>3. Release when done</p>
+            <p>4. Text appears on your PC</p>
+        </div>
+    </div>
+
+    <script>
+        const micButton = document.getElementById('micButton');
+        const textDisplay = document.getElementById('textDisplay');
+        const status = document.getElementById('status');
+        let ws = null;
+        let isRecording = false;
+        let recognition = null;
+
+        // Initialize Web Speech API
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                isRecording = true;
+                micButton.classList.add('recording');
+            };
+
+            recognition.onresult = (event) => {
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
+                }
+                textDisplay.textContent = transcript;
+                textDisplay.classList.remove('empty');
+            };
+
+            recognition.onend = () => {
+                isRecording = false;
+                micButton.classList.remove('recording');
+                // Send final transcript to server
+                const finalText = textDisplay.textContent;
+                if (finalText && finalText !== 'Tap the mic to talk...') {
+                    sendToPC(finalText);
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+            };
+        }
+
+        // WebSocket Connection
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}/ws?type=phone`);
+            
+            ws.onopen = () => {
+                status.textContent = '🟢 Connected';
+                status.classList.remove('disconnected');
+                status.classList.add('connected');
+            };
+
+            ws.onclose = () => {
+                status.textContent = '🔴 Disconnected';
+                status.classList.remove('connected');
+                status.classList.add('disconnected');
+                setTimeout(connectWebSocket, 3000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        function sendToPC(text) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ text, timestamp: new Date().toISOString() }));
+            }
+        }
+
+        // Mic Button Events
+        micButton.addEventListener('mousedown', () => {
+            if (recognition && !isRecording) {
+                textDisplay.textContent = '';
+                textDisplay.classList.add('empty');
+                recognition.start();
+            }
+        });
+
+        micButton.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (recognition && !isRecording) {
+                textDisplay.textContent = '';
+                textDisplay.classList.add('empty');
+                recognition.start();
+            }
+        });
+
+        micButton.addEventListener('mouseup', () => {
+            if (recognition && isRecording) {
+                recognition.stop();
+            }
+        });
+
+        micButton.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            if (recognition && isRecording) {
+                recognition.stop();
+            }
+        });
+
+        // Initialize connection
+        connectWebSocket();
+    </script>
+</body>
+</html>
